@@ -1,30 +1,83 @@
 <!DOCTYPE html><html><head><meta charset='utf-8'/>
 <title>写真からどこ行くの？</title>
-<meta property="og:image" content="tiledphoto2.jpg">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, target-densitydpi=device-dpi">
+<meta property="og:image" content="ss.jpg">
+<link rel="apple-touch-icon" href="icon.jpg"/>
+<meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, target-densitydpi=device-dpi">
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <script src='fukuno.js'></script>
 <script src='odp.js'></script>
 <script>"use strict";
 
-var getCulturalPropertyWithGeo = function(size, callback) {
+var maxlen = 40;
+var viewlen = 40;
+
+var getNearWithGeo = function(lat, lng, size, callback) {
+	// type
+	// http://purl.org/jrrk#CivicPOI
+	// http://odp.jig.jp/odp/1.0#TourSpot
+	// http://purl.org/jrrk#EmergencyFacility
+	var dll = 0.3;
+	lat = parseFloat(lat);
+	lng = parseFloat(lng);
+	var latmin = lat - dll;
+	var latmax = lat + dll;
+	var lngmin = lng - dll;
+	var lngmax = lng + dll;
+
 	var q = f2s(function() {/*
 		prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+		prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 		prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-		select ?name ?desc ?url ?img ?lat ?lng {
-			?s <http://schema.org/image> ?img;
+		prefix xsd: <http://www.w3.org/2001/XMLSchema#>
+		select ?name ?desc ?url ?img ?lat ?lng ?type {
+			?s rdf:type ?type;
 				rdfs:label ?name;
 				geo:lat ?lat;
 				geo:long ?lng.
+			optional { ?s <http://schema.org/image> ?img }
 			optional { ?s <http://schema.org/description> ?desc }
 			optional { ?s <http://schema.org/url> ?link }
+			filter(?type=<http://odp.jig.jp/odp/1.0#TourSpot> || ?type=<http://purl.org/jrrk#CivicPOI>)
+			filter(lang(?name)="$LANG$")
+			filter(lang(?desc)="$LANG$")
+			filter(contains(str(?img),'https://'))
+			filter(xsd:float(?lat) < $LAT_MAX$ && xsd:float(?lat) > $LAT_MIN$ && xsd:float(?lng) < $LNG_MAX$ && xsd:float(?lng) > $LAT_MIN$)
 		} order by rand() limit $SIZE$
 	*/});
-	q = q.replace(/\$SIZE\$/g, size);
+	/*
+	filter(?type=<http://odp.jig.jp/odp/1.0#TourSpot>)
 	
+	filter(?type=<http://odp.jig.jp/odp/1.0#TourSpot> || ?type=<http://purl.org/jrrk#CivicPOI> || ?type=<http://purl.org/jrrk#EmergencyFacility>)
+	*/
+	q = q.replace(/\$SIZE\$/g, size);
+//	q = q.replace(/\$TYPE\$/g, type);
+	q = q.replace(/\$LANG\$/g, "ja");
+	q = q.replace(/\$LAT_MAX\$/g, latmax);
+	q = q.replace(/\$LAT_MIN\$/g, latmin);
+	q = q.replace(/\$LNG_MAX\$/g, lngmax);
+	q = q.replace(/\$LNG_MIN\$/g, lngmin);
+		
 	querySPARQL(q, function(data) {
 		callback(toList(data));
 	});
+};
+var getLinkDirections = function(lat1, lng1, lat2, lng2) {
+	return "https://www.google.com/maps/dir/" + lat1 + "," + lng1 + "/" + lat2 + "," + lng2;
+};
+var getStaticMap = function(lat, lng, lat2, lng2) {
+	var APIKEY = "AIzaSyANrqj5VerKdH6utBb0vw7de_Bmm0wiGE8";
+	var s = "https://maps.googleapis.com/maps/api/staticmap?";
+	s += "key=" + APIKEY + "&";
+	s += "size=800x400&maptype=roadmap&";
+	s += "markers=color:red%7Clabel:P%7C" + lat + "," + lng + "&"
+	s += "markers=color:blue%7Clabel:D%7C" + lat2 + "," + lng2 + "&";
+	s += "sensor=false";
+	return "<img width=100% src='" + s + "'>";
+};
+var getHTMLMap = function(lat, lng, lat2, lng2) {
+	var dir = getLinkDirections(lat, lng, lat2, lng2);
+	var img = getStaticMap(lat, lng, lat2, lng2);
+	return "<a href='" + dir + "' target=_blank>" + img + "</a>";
 };
 
 var getDataWithImage = function(size, callback) {
@@ -53,62 +106,100 @@ var toList = function(data) {
 	return list;
 };
 
-window.onload = function() {
+var defpos = [ 42.31804, 140.97418 ];
+var cantPos = function() {
+	alert("位置情報が取得できないので、現在位置を室蘭駅と仮定します");
+	showItems(defpos[0], defpos[1]);
+};
+var mypos = {};
+var showItems = function(lat, lng) {
+	mypos.lat = lat;
+	mypos.lng = lng;
+	getNearWithGeo(lat, lng, maxlen, function(data) {
+		clear("main");
 
-	var load = function() {
-		//getDataWithImage(30, function(data) {
-		//		getCulturalProperty(30, function(data) {
-		getCulturalPropertyWithGeo(30, function(data) {
-//			dump(data);
-			clear("main");
-
-			var content = create("div");
-			content.className = "content";
-			content.onclick = function() {
-				this.style.display = "none";
-				this.style.opacity = "0%";
+		var content = create("div");
+		content.className = "content";
+		content.onclick = function() {
+			this.style.display = "none";
+			this.style.opacity = "0%";
+		};
+		get("main").appendChild(content);
+		
+		shuffle(data);
+		var idiv = [];
+		var nidiv = 4;
+		for (var i = 0; i < nidiv; i++) {
+			var d = create("div");
+			d.className = "idiv";
+			get("main").appendChild(d);
+			idiv[i] = d;
+		}
+		for (var i = 0; i < data.length; i++) {
+			var d = data[i];
+			var img = new Image();
+			img.src = d.img;
+			img.d = d;
+			img.onclick = function() {
+				content.innerHTML = getContent(this.d);
+				content.style.top = (window.scrollY + 10) + "px";
+				content.style.display = "inline-block";
+				content.style.opacity = "80%";
 			};
-			get("main").appendChild(content);
-			
-			shuffle(data);
-			var idiv = [];
-			var nidiv = 4;
-			for (var i = 0; i < nidiv; i++) {
-				var d = create("div");
-				d.className = "idiv";
-				get("main").appendChild(d);
-				idiv[i] = d;
-			}
-			for (var i = 0; i < data.length; i++) {
-				var d = data[i];
-				var img = new Image();
-				img.src = d.img;
-				img.d = d;
-				img.onclick = function() {
-					content.innerHTML = getContent(this.d);
-					content.style.top = (window.scrollY + 10) + "px";
-					content.style.display = "inline-block";
-					content.style.opacity = "80%";
-				};
-				img.onload = function() {
-					var div = create('div');
-					div.className = 'item';
-					var min = 100000;
-					var nmin = -1;
-					for (var j = nidiv - 1; j >= 0; j--) {
-						var h = idiv[j].clientHeight;
-						if (h < min) {
-							min = h;
-							nmin = j;
-						}
+			img.onload = function() {
+				var div = create('div');
+				div.className = 'item';
+				var min = 100000;
+				var nmin = -1;
+				for (var j = nidiv - 1; j >= 0; j--) {
+					var h = idiv[j].clientHeight;
+					if (h < min) {
+						min = h;
+						nmin = j;
 					}
-					idiv[nmin].appendChild(this);
-				};
+				}
+				idiv[nmin].appendChild(this);
+			};
+		}
+	});
+};
+var init = function() {
+	clear("main");
+	var hash = document.location.hash;
+	if (hash.length > 1) {
+		var pos = hash.substring(1).split(",");
+		showItems(pos[0], pos[1]);
+		return;
+	}
+	
+	get("main").textContent = "現在位置取得中...";
+	
+	if (navigator.geolocation) {
+		navigator.geolocation.getCurrentPosition(
+			function(pos) {
+				var lat = pos.coords.latitude;
+				var lng = pos.coords.longitude;
+				showItems(lat, lng);
+			},
+			function(err) {
+				var errmes = [ "", "許可されてません", "判定できません", "タイムアウト" ];
+				console.log(errmes[err]);
+				cantPos();
+			},
+			{
+				enableHighAccuracy: true,
+				timeout: 10000, // 10sec
+				maximumAge: 600000
 			}
-		});
-	};
-	get("reload").onclick = load;
-	load();
+		);
+	} else {
+		cantPos();
+	}
+};
+
+window.onload = function() {
+	get("reload").onclick = init;
+	init();
 };
 var getGeoLink = function(lat, lng) {
 	return "<a target=_blank href=http://maps.google.com/?ll=" + lat + "," + lng + ">" + lat + "," + lng + "</a>";
@@ -133,7 +224,7 @@ var getTable = function(data) {
 		if (name == "lat" || name == "lng") {
 			geo[name] = val;
 			if (geo.lat != null && geo.lng != null) {
-				s.push("<tr><td>lat/lng</td><td>" + getGeoLink(geo.lat, geo.lng) + "</td></tr>");
+				s.push("<tr><td>lat/lng</td><td>" + getHTMLMap(mypos.lat, mypos.lng, geo.lat, geo.lng) + "<br>" + getGeoLink(geo.lat, geo.lng) + "</td></tr>");
 			}
 			continue;
 		}
@@ -150,13 +241,13 @@ var getContent = function(data) {
 body {
 	margin: 0px;
 	text-align: center;
-	background: #eee;
+	background: black;
+	color: white;
 }
 #main {
 	text-align: center;
 	position: relative;
 	margin-bottom: 20px;
-	background: black;
 }
 table td {
 	vertical-align: top;
@@ -202,8 +293,9 @@ table td:nth-child(2) {
 	width: 88%;
 	left: 6%;
 	box-sizing: border-box;
-	border: 4px solid gray;
+	x-border: 4px solid gray;
 	background: #eee;
+	color: black;
 	opacity: 0%;
 	text-align: left;
 	padding: 10px;
@@ -219,12 +311,16 @@ table td:nth-child(2) {
 	margin-right: 2px;
 	margin-bottom: 2px;
 }
+.content a {
+	color: black;
+}
 a {
-	color: gray !imporant;
+	color: white;
 }
 button {
 	margin: 0.5em;
 	padding: 0.3em;
+	background-color: gray;
 }
 #debug {
 	text-align: left;
@@ -243,7 +339,7 @@ button {
 </a>
 </div>
 <div class="src">
-APP: CC BY <a href=http://fukuno.jig.jp/1546 target=_blank>福野泰介の一日一創 - フォト観光 - 写真オープンデータから始まる旅</a><br>
+APP: CC BY <a href=http://fukuno.jig.jp/1575 target=_blank>福野泰介の一日一創「写真からどこ行くの？」</a>(<a href=https://github.com/codeforfukui/dokophoto>GitHub</a>)<br>
 DATA: CC BY <a href=http://sparql.odp.jig.jp/ target=_blank>odp SPARQL Endpoint</a><br>
 </div>
 
