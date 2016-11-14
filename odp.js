@@ -1,6 +1,6 @@
 // odp
 var querySPARQL = function(q, callback) {
-	var baseurl = "http://sparql.odp.jig.jp/data/sparql";
+	var baseurl = "https://sparql.odp.jig.jp/data/sparql";
 	var url = baseurl + "?query=" + encodeURIComponent(q) + "&output=json";
 	url += "&callback=" + getCallbackMethod(callback);
 	jsonp(url);
