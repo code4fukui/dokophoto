@@ -1,0 +1,251 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'/>
+<title>写真からどこ行くの？</title>
+<meta property="og:image" content="tiledphoto2.jpg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, target-densitydpi=device-dpi">
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<script src='fukuno.js'></script>
+<script src='odp.js'></script>
+<script>"use strict";
+
+var getCulturalPropertyWithGeo = function(size, callback) {
+	var q = f2s(function() {/*
+		prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+		prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+		select ?name ?desc ?url ?img ?lat ?lng {
+			?s <http://schema.org/image> ?img;
+				rdfs:label ?name;
+				geo:lat ?lat;
+				geo:long ?lng.
+			optional { ?s <http://schema.org/description> ?desc }
+			optional { ?s <http://schema.org/url> ?link }
+		} order by rand() limit $SIZE$
+	*/});
+	q = q.replace(/\$SIZE\$/g, size);
+	
+	querySPARQL(q, function(data) {
+		callback(toList(data));
+	});
+};
+
+var getDataWithImage = function(size, callback) {
+	var q = f2s(function() {/*
+		select ?url ?img {
+		?url <http://schema.org/image> ?img.
+		} order by rand() limit $SIZE$
+	*/});
+	q = q.replace(/\$SIZE\$/g, size);
+	
+	querySPARQL(q, function(data) {
+		callback(toList(data));
+	});
+};
+var toList = function(data) {
+	var items = data.results.bindings;
+	var list = [];
+	for (var uri in items) {
+		var it = items[uri];
+		var d = {};
+		for (var v in it) {
+			d[v] = it[v].value;
+		}
+		list.push(d);
+	}
+	return list;
+};
+
+window.onload = function() {
+
+	var load = function() {
+		//getDataWithImage(30, function(data) {
+		//		getCulturalProperty(30, function(data) {
+		getCulturalPropertyWithGeo(30, function(data) {
+//			dump(data);
+			clear("main");
+
+			var content = create("div");
+			content.className = "content";
+			content.onclick = function() {
+				this.style.display = "none";
+				this.style.opacity = "0%";
+			};
+			get("main").appendChild(content);
+			
+			shuffle(data);
+			var idiv = [];
+			var nidiv = 4;
+			for (var i = 0; i < nidiv; i++) {
+				var d = create("div");
+				d.className = "idiv";
+				get("main").appendChild(d);
+				idiv[i] = d;
+			}
+			for (var i = 0; i < data.length; i++) {
+				var d = data[i];
+				var img = new Image();
+				img.src = d.img;
+				img.d = d;
+				img.onclick = function() {
+					content.innerHTML = getContent(this.d);
+					content.style.top = (window.scrollY + 10) + "px";
+					content.style.display = "inline-block";
+					content.style.opacity = "80%";
+				};
+				img.onload = function() {
+					var div = create('div');
+					div.className = 'item';
+					var min = 100000;
+					var nmin = -1;
+					for (var j = nidiv - 1; j >= 0; j--) {
+						var h = idiv[j].clientHeight;
+						if (h < min) {
+							min = h;
+							nmin = j;
+						}
+					}
+					idiv[nmin].appendChild(this);
+				};
+			}
+		});
+	};
+	get("reload").onclick = load;
+	load();
+};
+var getGeoLink = function(lat, lng) {
+	return "<a target=_blank href=http://maps.google.com/?ll=" + lat + "," + lng + ">" + lat + "," + lng + "</a>";
+};
+var getTable = function(data) {
+	var s = [];
+	s.push("<table>");
+	var url = data.url;
+	var geo = {};
+	for (var name in data) {
+		var val = data[name];
+		if (val.toLowerCase().endsWith(".jpg")) {
+			if (url != null)
+				val = "<a href=" + url + " target=detail><img src=" + val + " width=100%></a>";
+			else
+				val = "<img src=" + val + " width=100%>";
+		}
+		if (name == "url" && url != null) {
+			s.push("<tr><td>" + name + "</td><td><a href=" + url + " target=detail>" + val + "</a></td></tr>");
+			continue;
+		}
+		if (name == "lat" || name == "lng") {
+			geo[name] = val;
+			if (geo.lat != null && geo.lng != null) {
+				s.push("<tr><td>lat/lng</td><td>" + getGeoLink(geo.lat, geo.lng) + "</td></tr>");
+			}
+			continue;
+		}
+		s.push("<tr><td>" + name + "</td><td>" + val + "</td></tr>");
+	}
+	s.push("</table>");
+	return s.join("");
+};
+var getContent = function(data) {
+	return getTable(data);
+};
+</script>
+<style>
+body {
+	margin: 0px;
+	text-align: center;
+	background: #eee;
+}
+#main {
+	text-align: center;
+	position: relative;
+	margin-bottom: 20px;
+	background: black;
+}
+table td {
+	vertical-align: top;
+	padding-right: 8px;
+}
+table td:nth-child(2) {
+	word-break: break-all;
+}
+.item {
+	display: inline-block;
+	width: 93%;
+	border: 2px solid green;
+	margin: 4px 4px 4px 8px;
+	text-align: left;
+	background: #fff;
+	padding: 2px;
+	line-height: 1.7;
+}
+.item .title {
+	font-size: 200%;
+	margin-left: 0px;
+}
+.item .img {
+	float: left;
+	width: 100px;
+	margin-left: 3px;
+	margin-right: 2px;
+	margin-bottom: 2px;
+}
+.idiv {
+	vertical-align: top;
+	display: inline-block;
+	width: 46%;
+	padding: 4px;
+}
+.idiv img {
+	width: 100%;
+	margin-bottom: 4px;
+}
+.content {
+	display: none;
+	position: absolute;
+	width: 88%;
+	left: 6%;
+	box-sizing: border-box;
+	border: 4px solid gray;
+	background: #eee;
+	opacity: 0%;
+	text-align: left;
+	padding: 10px;
+}
+.content .title {
+	font-size: 200%;
+	margin-left: 0px;
+}
+.content .img {
+	float: left;
+	width: 100px;
+	margin-left: 3px;
+	margin-right: 2px;
+	margin-bottom: 2px;
+}
+a {
+	color: gray !imporant;
+}
+button {
+	margin: 0.5em;
+	padding: 0.3em;
+}
+#debug {
+	text-align: left;
+}
+</style>
+</head>
+<body>
+
+<div id='main'></div>
+</div>
+<button id='reload'>再取得</button>
+
+<div class="ad">
+<a href=http://odp.jig.jp/ target=_blank>
+[PR] 公共データを５つ星オープンデータ化！ odp by jig.jp
+</a>
+</div>
+<div class="src">
+APP: CC BY <a href=http://fukuno.jig.jp/1546 target=_blank>福野泰介の一日一創 - フォト観光 - 写真オープンデータから始まる旅</a><br>
+DATA: CC BY <a href=http://sparql.odp.jig.jp/ target=_blank>odp SPARQL Endpoint</a><br>
+</div>
+
+</body>
+</html>
